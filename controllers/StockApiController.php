@@ -19,7 +19,7 @@ class StockApiController extends BaseApiController
 		{
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-			$listId = 1;
+			$listId = null;
 
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
 			{
@@ -43,7 +43,7 @@ class StockApiController extends BaseApiController
 		{
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-			$listId = 1;
+			$listId = null;
 
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
 			{
@@ -67,7 +67,7 @@ class StockApiController extends BaseApiController
 		{
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-			$listId = 1;
+			$listId = null;
 
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
 			{
@@ -181,7 +181,7 @@ class StockApiController extends BaseApiController
 		{
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-			$listId = 1;
+			$listId = null;
 			$amount = 1;
 			$quId = -1;
 			$productId = null;
@@ -234,7 +234,7 @@ class StockApiController extends BaseApiController
 		{
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-			$listId = 1;
+			$listId = null;
 			if (array_key_exists('list_id', $requestBody) && !empty($requestBody['list_id']) && is_numeric($requestBody['list_id']))
 			{
 				$listId = intval($requestBody['list_id']);
@@ -733,7 +733,7 @@ class StockApiController extends BaseApiController
 		{
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
 
-			$listId = 1;
+			$listId = null;
 			$amount = 1;
 			$productId = null;
 

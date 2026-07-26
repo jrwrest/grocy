@@ -374,6 +374,36 @@ function phase3RuntimeIsolation(): bool
 		) && $ok;
 	}
 
+	// A household whose default shopping list is NOT id 1 must still be able to
+	// use it. Callers historically passed a literal list_id of 1, which under
+	// household scoping matches nothing and silently no-ops.
+	foreach (['A', 'B'] as $letter) {
+		$listId = (int)db()->query(
+			'SELECT id FROM shopping_lists WHERE household_id = ' . $fixtures[$letter]['householdId'] . ' ORDER BY id LIMIT 1'
+		)->fetchColumn();
+		$productId = (int)db()->query(
+			'SELECT id FROM products WHERE name LIKE "' . $stamp . '-' . $letter . '%" LIMIT 1'
+		)->fetchColumn();
+
+		if ($listId === 0 || $productId === 0) {
+			skip("household $letter can use its own shopping list", 'fixture missing');
+			continue;
+		}
+
+		// deliberately omit list_id, forcing the default path
+		api('POST', '/stock/shoppinglist/add-product', $fixtures[$letter]['apiKey'], [
+			'product_id' => $productId,
+			'product_amount' => 3,
+		]);
+
+		$landed = (int)db()->query(
+			'SELECT COUNT(*) FROM shopping_list WHERE product_id = ' . $productId . ' AND shopping_list_id = ' . $listId
+		)->fetchColumn();
+
+		$ok = check("household $letter can add to its own shopping list without naming it (list id $listId)", $landed > 0,
+			$landed > 0 ? '' : 'nothing landed — the literal list_id 1 default silently no-ops for this household') && $ok;
+	}
+
 	// Same real-world barcode in two households. Barcodes are global facts (an
 	// EAN identifies a product worldwide), so two households stocking the same
 	// item WILL collide on a globally-unique barcode index.

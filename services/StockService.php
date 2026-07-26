@@ -18,8 +18,29 @@ class StockService extends BaseService
 	const TRANSACTION_TYPE_TRANSFER_FROM = 'transfer_from';
 	const TRANSACTION_TYPE_TRANSFER_TO = 'transfer_to';
 
-	public function AddMissingProductsToShoppingList($listId = 1)
+	/**
+	 * Resolves an omitted shopping list to the current household's default list.
+	 *
+	 * Callers historically passed a literal 1, which is only correct for the
+	 * first household: for any other household the household-scoped query
+	 * matches nothing and the operation silently does nothing. getDatabase() is
+	 * already scoped, so the first list it returns is this household's.
+	 */
+	private function ResolveShoppingListId($listId)
 	{
+		if ($listId !== null && $listId > 0)
+		{
+			return $listId;
+		}
+
+		$list = $this->getDatabase()->shopping_lists()->orderBy('id')->fetch();
+
+		return $list === null ? 1 : $list->id;
+	}
+
+	public function AddMissingProductsToShoppingList($listId = null)
+	{
+		$listId = $this->ResolveShoppingListId($listId);
 		if (!$this->ShoppingListExists($listId))
 		{
 			throw new \Exception('Shopping list does not exist');
@@ -57,8 +78,9 @@ class StockService extends BaseService
 		}
 	}
 
-	public function AddOverdueProductsToShoppingList($listId = 1)
+	public function AddOverdueProductsToShoppingList($listId = null)
 	{
+		$listId = $this->ResolveShoppingListId($listId);
 		if (!$this->ShoppingListExists($listId))
 		{
 			throw new \Exception('Shopping list does not exist');
@@ -83,8 +105,9 @@ class StockService extends BaseService
 		}
 	}
 
-	public function AddExpiredProductsToShoppingList($listId = 1)
+	public function AddExpiredProductsToShoppingList($listId = null)
 	{
+		$listId = $this->ResolveShoppingListId($listId);
 		if (!$this->ShoppingListExists($listId))
 		{
 			throw new \Exception('Shopping list does not exist');
@@ -304,8 +327,9 @@ class StockService extends BaseService
 		}
 	}
 
-	public function AddProductToShoppingList($productId, $amount = 1, $quId = -1, $note = null, $listId = 1)
+	public function AddProductToShoppingList($productId, $amount = 1, $quId = -1, $note = null, $listId = null)
 	{
+		$listId = $this->ResolveShoppingListId($listId);
 		if (!$this->ShoppingListExists($listId))
 		{
 			throw new \Exception('Shopping list does not exist');
@@ -345,8 +369,9 @@ class StockService extends BaseService
 		}
 	}
 
-	public function ClearShoppingList($listId = 1, $doneOnly = false)
+	public function ClearShoppingList($listId = null, $doneOnly = false)
 	{
+		$listId = $this->ResolveShoppingListId($listId);
 		if (!$this->ShoppingListExists($listId))
 		{
 			throw new \Exception('Shopping list does not exist');
@@ -1153,8 +1178,9 @@ class StockService extends BaseService
 		return $transactionId;
 	}
 
-	public function RemoveProductFromShoppingList($productId, $amount = 1, $listId = 1)
+	public function RemoveProductFromShoppingList($productId, $amount = 1, $listId = null)
 	{
+		$listId = $this->ResolveShoppingListId($listId);
 		if (!$this->ShoppingListExists($listId))
 		{
 			throw new \Exception('Shopping list does not exist');
@@ -1179,8 +1205,9 @@ class StockService extends BaseService
 		}
 	}
 
-	public function GetShoppinglistInPrintableStrings($listId = 1): array
+	public function GetShoppinglistInPrintableStrings($listId = null): array
 	{
+		$listId = $this->ResolveShoppingListId($listId);
 		if (!$this->ShoppingListExists($listId))
 		{
 			throw new \Exception('Shopping list does not exist');
