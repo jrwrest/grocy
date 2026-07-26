@@ -31,7 +31,14 @@ $('#register-button').on('click', function(e)
 
 	$('#register-button').prop('disabled', true);
 
-	Grocy.Api.Post('register', { username: username, password: password, household_name: householdName },
+	Grocy.Api.Post('register', {
+		username: username,
+		password: password,
+		household_name: householdName,
+		// abuse-protection fields, read by the server
+		website: $('#website').val(),
+		form_rendered_at: $('#form_rendered_at').val()
+	},
 		function(result)
 		{
 			// Straight to login: registration deliberately does not sign the

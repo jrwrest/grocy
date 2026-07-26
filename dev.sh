@@ -59,8 +59,13 @@ case "${1:-up}" in
     exec "$0" up
     ;;
   test)
-    # Multi-household isolation harness. Fails until the feature is implemented —
-    # that is the point: it is the definition of done.
+    # Warm the app first. Grocy caches its routes in data/viewcache, so the first
+    # request after a flush rebuilds them and can return nothing — which showed up
+    # as a positive control failing on the first run after ./dev.sh reset. Warming
+    # here means the harness never measures a cold app.
+    for _ in 1 2 3; do
+      curl -s -o /dev/null -m 10 http://localhost:9284/login || true
+    done
     docker exec grocy-dev php /app/www/tests/multihousehold/isolation_test.php
     ;;
   flush)

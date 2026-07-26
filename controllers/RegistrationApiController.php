@@ -27,7 +27,12 @@ class RegistrationApiController extends BaseApiController
 			$userId = $service->Register(
 				$requestBody['username'] ?? '',
 				$requestBody['password'] ?? '',
-				$requestBody['household_name'] ?? ''
+				$requestBody['household_name'] ?? '',
+				[
+					// Abuse-protection inputs, not user data.
+					'honeypot' => $requestBody['website'] ?? '',
+					'form_rendered_at' => $requestBody['form_rendered_at'] ?? null,
+				]
 			);
 
 			return $this->ApiResponse($response, ['created_object_id' => $userId]);

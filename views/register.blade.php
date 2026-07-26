@@ -59,6 +59,26 @@
 				<div class="invalid-feedback">{{ $__t('Passwords do not match') }}</div>
 			</div>
 
+			{{-- Abuse protection, free and with no third-party dependency.
+			     "website" is a honeypot: hidden from people, irresistible to bots.
+			     form_rendered_at lets the server reject impossibly fast submits.
+			     Neither replaces the server-side rate limit; they just filter the
+			     cheap traffic before it reaches it. --}}
+			<div class="d-none"
+				aria-hidden="true">
+				<label for="website">{{ $__t('Website') }}</label>
+				<input type="text"
+					id="website"
+					name="website"
+					tabindex="-1"
+					autocomplete="off"
+					value="">
+			</div>
+			<input type="hidden"
+				id="form_rendered_at"
+				name="form_rendered_at"
+				value="{{ time() }}">
+
 			<div id="register-error"
 				class="alert alert-danger d-none"
 				role="alert"></div>

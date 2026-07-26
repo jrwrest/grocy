@@ -64,6 +64,9 @@ const GLOBAL_TABLES = [
 	'user_settings',         // per user, not per household
 	'user_permissions',      // per user
 	'permission_hierarchy',  // static permission definitions
+	// Rate-limit ledger for /register. Keyed by IP and written BEFORE any
+	// household exists, so it cannot be household-scoped even in principle.
+	'registration_attempts',
 ];
 
 const USERS_TABLE = 'users';
@@ -173,6 +176,20 @@ function skip(string $label, string $why): void
 	global $RESULTS;
 	$RESULTS['skip']++;
 	echo "  \033[33mSKIP\033[0m  $label — $why\n";
+}
+
+/**
+ * Clears the registration rate-limit window.
+ *
+ * The limits are per-IP and every check in this harness comes from the same IP,
+ * so without this, phase 5's guard tests would be refused for being rate limited
+ * rather than for the reason under test — passing for the wrong reason.
+ */
+function resetRegistrationLimits(): void
+{
+    if (objectExists('registration_attempts')) {
+        db()->exec('DELETE FROM registration_attempts');
+    }
 }
 
 // ------------------------------------------------------- phase 1: schema ---
@@ -730,6 +747,8 @@ function phase5SelfRegistration(): bool
 	$stamp = 'reg' . bin2hex(random_bytes(3));
 	$ok = true;
 
+	resetRegistrationLimits();
+
 	if (!$enabled) {
 		// The safe default. Verify it is genuinely closed, not merely hidden.
 		$res = api('POST', '/register', null, [
@@ -806,12 +825,15 @@ function phase5SelfRegistration(): bool
 		"got $memberHousehold, expected $householdId") && $ok;
 
 	// Guards
+	resetRegistrationLimits();
 	$dupe = api('POST', '/register', null, ['username' => $stamp, 'password' => 'supersecret1', 'household_name' => 'Other']);
 	$ok = check('duplicate username is rejected', $dupe['status'] >= 400) && $ok;
 
+	resetRegistrationLimits();
 	$weak = api('POST', '/register', null, ['username' => $stamp . 'x', 'password' => 'short', 'household_name' => 'Weak']);
 	$ok = check('a password under 8 characters is rejected', $weak['status'] >= 400) && $ok;
 
+	resetRegistrationLimits();
 	$blank = api('POST', '/register', null, ['username' => $stamp . 'y', 'password' => 'supersecret1', 'household_name' => '   ']);
 	$ok = check('a blank household name is rejected', $blank['status'] >= 400) && $ok;
 
@@ -827,11 +849,118 @@ function phase5SelfRegistration(): bool
 	return $ok;
 }
 
+/**
+ * Phase 6: the free abuse protections on the public /register endpoint.
+ *
+ * /register is unauthenticated and writes to the database, so without limits it
+ * can be hammered to fill the disk with households. No third-party CAPTCHA is
+ * used deliberately — these cost nothing and add no external dependency.
+ */
+function phase6RegistrationAbuseProtection(): bool
+{
+	heading('Phase 6 — abuse protection on the public /register endpoint');
+
+	$enabled = defined('GROCY_FEATURE_FLAG_SELF_REGISTRATION') && GROCY_FEATURE_FLAG_SELF_REGISTRATION === true;
+
+	if (!objectExists('registration_attempts')) {
+		return check('registration_attempts table exists', false, 'migration 0260 has not run');
+	}
+	check('registration_attempts table exists', true);
+
+	if (!$enabled) {
+		skip('abuse protection probes', 'self-registration is off, so there is nothing to protect');
+		return true;
+	}
+
+	$ok = true;
+	$long_ago = time() - 60;
+
+	// 1. honeypot
+	resetRegistrationLimits();
+	$stamp = 'hp' . bin2hex(random_bytes(3));
+	$res = api('POST', '/register', null, [
+		'username' => $stamp,
+		'password' => 'supersecret1',
+		'household_name' => $stamp . ' Home',
+		'website' => 'http://spam.example',
+		'form_rendered_at' => $long_ago,
+	]);
+	$ok = check('a filled honeypot field is rejected', $res['status'] >= 400) && $ok;
+	$created = (int)db()->query('SELECT COUNT(*) FROM users WHERE username = "' . $stamp . '"')->fetchColumn();
+	$ok = check('the honeypot request created no user', $created === 0) && $ok;
+	$ok = check('the rejection message does not reveal which check tripped',
+		($res['body']['error_message'] ?? '') === 'Registration failed') && $ok;
+
+	// 2. impossibly fast submit
+	resetRegistrationLimits();
+	$stamp = 'fast' . bin2hex(random_bytes(3));
+	$res = api('POST', '/register', null, [
+		'username' => $stamp,
+		'password' => 'supersecret1',
+		'household_name' => $stamp . ' Home',
+		'form_rendered_at' => time(),
+	]);
+	$ok = check('an instantly submitted form is rejected', $res['status'] >= 400) && $ok;
+
+	// 3. per-IP throttle. Every attempt counts, successful or not, so invalid
+	//    requests cannot be retried for free.
+	resetRegistrationLimits();
+	$limit = defined('GROCY_SELF_REGISTRATION_MAX_PER_IP_PER_HOUR') ? (int)GROCY_SELF_REGISTRATION_MAX_PER_IP_PER_HOUR : 3;
+	$blocked = false;
+	$createdIds = [];
+	for ($i = 0; $i < $limit + 2; $i++) {
+		$stamp = 'rl' . bin2hex(random_bytes(3)) . $i;
+		$res = api('POST', '/register', null, [
+			'username' => $stamp,
+			'password' => 'supersecret1',
+			'household_name' => $stamp . ' Home',
+			'form_rendered_at' => $long_ago,
+		]);
+		if (isset($res['body']['created_object_id'])) {
+			$createdIds[] = (int)$res['body']['created_object_id'];
+		}
+		if (str_contains((string)($res['body']['error_message'] ?? ''), 'Too many registration attempts')) {
+			$blocked = true;
+			break;
+		}
+	}
+	$ok = check("the per-IP throttle blocks after $limit attempts in an hour", $blocked,
+		$blocked ? '' : 'the endpoint accepted more than the configured limit') && $ok;
+	$ok = check('the throttle allowed no more registrations than the limit', count($createdIds) <= $limit,
+		count($createdIds) . ' created, limit ' . $limit) && $ok;
+
+	// 4. hard household cap — the direct defence against filling the disk
+	resetRegistrationLimits();
+	$cap = defined('GROCY_SELF_REGISTRATION_MAX_HOUSEHOLDS') ? (int)GROCY_SELF_REGISTRATION_MAX_HOUSEHOLDS : 0;
+	$ok = check('a household cap is configured', $cap > 0,
+		$cap > 0 ? "cap = $cap" : 'unlimited — a public endpoint with no cap can fill the disk') && $ok;
+
+	// cleanup: remove everything this phase created
+	resetRegistrationLimits();
+	foreach (['hp', 'fast', 'rl'] as $prefix) {
+		$rows = db()->query('SELECT id, household_id FROM users WHERE username LIKE "' . $prefix . '%"')->fetchAll(\PDO::FETCH_ASSOC);
+		foreach ($rows as $row) {
+			db()->exec('DELETE FROM user_permissions WHERE user_id = ' . (int)$row['id']);
+			db()->exec('DELETE FROM api_keys WHERE user_id = ' . (int)$row['id']);
+			db()->exec('DELETE FROM users WHERE id = ' . (int)$row['id']);
+			if ((int)$row['household_id'] > 1) {
+				foreach (['shopping_lists', 'locations', 'quantity_units'] as $table) {
+					db()->exec('DELETE FROM ' . $table . ' WHERE household_id = ' . (int)$row['household_id']);
+				}
+				db()->exec('DELETE FROM households WHERE id = ' . (int)$row['household_id']);
+			}
+		}
+	}
+
+	return $ok;
+}
+
 $p1 = phase1SchemaCoverage();
 $p2 = phase2ViewCoverage();
 $p3 = phase3RuntimeIsolation();
 $p4 = phase4HouseholdManagement();
 $p5 = phase5SelfRegistration();
+$p6 = phase6RegistrationAbuseProtection();
 
 heading('Summary');
 printf("  passed %d, failed %d, skipped %d\n", $RESULTS['pass'], $RESULTS['fail'], $RESULTS['skip']);
@@ -843,7 +972,7 @@ if ($FAILURES !== []) {
 	}
 }
 
-$allGood = $p1 && $p2 && $p3 && $p4 && $p5;
+$allGood = $p1 && $p2 && $p3 && $p4 && $p5 && $p6;
 echo "\n" . ($allGood
 	? "\033[32mISOLATION VERIFIED — no cross-household leakage detected.\033[0m\n\n"
 	: "\033[31mNOT ISOLATED — multi-household is not safe to use yet.\033[0m\n\n");

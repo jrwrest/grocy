@@ -136,6 +136,14 @@ Setting('TPRINTER_CONNECTOR', '/dev/usb/lp0'); // Printer device (does only matt
 // ADMIN, which would let them manage or delete other people's households.
 Setting('FEATURE_FLAG_SELF_REGISTRATION', false);
 
+// Abuse protection for self-registration. Only relevant when the flag above is
+// on. No third-party CAPTCHA is used deliberately: it would put an external
+// dependency and an account requirement on the critical path of signup.
+Setting('SELF_REGISTRATION_MAX_PER_IP_PER_HOUR', 3);   // per-IP throttle
+Setting('SELF_REGISTRATION_MAX_ATTEMPTS_PER_HOUR', 30); // instance-wide throttle
+Setting('SELF_REGISTRATION_MAX_HOUSEHOLDS', 100);       // hard cap; 0 = unlimited
+Setting('SELF_REGISTRATION_MIN_SUBMIT_SECONDS', 2);     // forms filled faster than this are bots
+
 Setting('FEATURE_FLAG_STOCK', true);
 Setting('FEATURE_FLAG_SHOPPINGLIST', true);
 Setting('FEATURE_FLAG_RECIPES', true);
