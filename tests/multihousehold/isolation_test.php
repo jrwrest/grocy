@@ -263,6 +263,24 @@ function phase3RuntimeIsolation(): bool
 			continue;
 		}
 
+		// POSITIVE CONTROL. If a household cannot see its OWN row, the negative
+		// probe below is meaningless — it would "pass" simply because the
+		// endpoint returns nothing. Every vacuous pass this harness has produced
+		// so far was caught by reasoning; this catches them automatically.
+		foreach (['A', 'B'] as $letter) {
+			$res = api('GET', '/objects/' . $entity, $fixtures[$letter]['apiKey']);
+			$seesOwn = false;
+			if ($res['status'] === 200 && is_array($res['body'])) {
+				foreach ($res['body'] as $row) {
+					if (str_contains((string)json_encode($row), $stamp . '-' . $letter)) {
+						$seesOwn = true;
+					}
+				}
+			}
+			$ok = check("household $letter CAN see its own $entity (control)", $seesOwn,
+				$seesOwn ? '' : 'endpoint returned nothing for its own data — the isolation probe below proves nothing') && $ok;
+		}
+
 		foreach ([['A', 'B'], ['B', 'A']] as [$self, $other]) {
 			$res = api('GET', '/objects/' . $entity, $fixtures[$self]['apiKey']);
 			if ($res['status'] !== 200 || !is_array($res['body'])) {
@@ -292,6 +310,24 @@ function phase3RuntimeIsolation(): bool
 		skip('stock isolation', 'stock fixture missing in one or both households — inconclusive, not passing');
 		$ok = false;
 	} else {
+		// Positive control for stock too — /stock reads the stock_current view.
+		foreach (['A', 'B'] as $letter) {
+			$ownProductId = (int)db()->query(
+				'SELECT id FROM products WHERE name LIKE "' . $stamp . '-' . $letter . '%" LIMIT 1'
+			)->fetchColumn();
+			$res = api('GET', '/stock', $fixtures[$letter]['apiKey']);
+			$seesOwn = false;
+			if ($res['status'] === 200 && is_array($res['body'])) {
+				foreach ($res['body'] as $row) {
+					if (isset($row['product_id']) && (int)$row['product_id'] === $ownProductId) {
+						$seesOwn = true;
+					}
+				}
+			}
+			$ok = check("household $letter CAN see its own stock (control)", $seesOwn,
+				$seesOwn ? '' : '/stock returned nothing for its own entry — the isolation probe below proves nothing') && $ok;
+		}
+
 		foreach ([['A', 'B'], ['B', 'A']] as [$self, $other]) {
 			$otherProductId = (int)db()->query(
 				'SELECT id FROM products WHERE name LIKE "' . $stamp . '-' . $other . '%" LIMIT 1'

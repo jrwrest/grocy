@@ -3,6 +3,7 @@
 namespace Grocy\Services;
 
 use Grocy\Services\UsersService;
+use Grocy\Services\HouseholdScopedDatabase;
 use LessQL\Database;
 
 class DatabaseService
@@ -65,7 +66,8 @@ class DatabaseService
 	{
 		if (self::$DbConnection == null)
 		{
-			self::$DbConnection = new Database($this->GetDbConnectionRaw());
+			$pdo = $this->GetDbConnectionRaw();
+			self::$DbConnection = new HouseholdScopedDatabase($pdo, HouseholdScopedDatabase::DiscoverScopedObjects($pdo));
 		}
 
 		if (GROCY_MODE === 'dev')

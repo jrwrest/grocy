@@ -45,6 +45,7 @@ abstract class AuthMiddleware extends BaseMiddleware
 			define('GROCY_AUTHENTICATED', true);
 			define('GROCY_USER_USERNAME', $user->username);
 			define('GROCY_USER_PICTURE_FILE_NAME', $user->picture_file_name);
+			define('GROCY_HOUSEHOLD_ID', $user->household_id);
 
 			return $handler->handle($request);
 		}
@@ -73,6 +74,7 @@ abstract class AuthMiddleware extends BaseMiddleware
 				define('GROCY_USER_ID', $user->id);
 				define('GROCY_USER_USERNAME', $user->username);
 				define('GROCY_USER_PICTURE_FILE_NAME', $user->picture_file_name);
+				define('GROCY_HOUSEHOLD_ID', $user->household_id);
 
 				return $response = $handler->handle($request);
 			}
