@@ -349,6 +349,70 @@ function phase3RuntimeIsolation(): bool
 		}
 	}
 
+	// SAME-NAME check. Two households must be able to use the SAME name for the
+	// same kind of thing — both can have a "Fridge", a "Milk", a "Shopping list".
+	// The isolation probes above cannot catch this, because their fixtures are
+	// stamped per household and so never collide. Grocy declares
+	// `name TEXT NOT NULL UNIQUE` on 11 content tables, which is global.
+	$shared = $stamp . '-shared-name';
+	foreach (['locations', 'quantity_units', 'product_groups', 'shopping_lists', 'chores', 'batteries'] as $entity) {
+		$created = [];
+		foreach (['A', 'B'] as $letter) {
+			$body = ['name' => $shared];
+			if ($entity === 'chores') {
+				$body['period_type'] = 'manually';
+			}
+			$res = api('POST', '/objects/' . $entity, $fixtures[$letter]['apiKey'], $body);
+			if ($res['status'] >= 200 && $res['status'] < 300) {
+				$created[] = $letter;
+			}
+		}
+		$ok = check(
+			"both households can have a $entity called the same thing",
+			count($created) === 2,
+			count($created) === 2 ? '' : 'only household ' . (implode(',', $created) ?: 'none') . ' could — a global UNIQUE(name) blocks the second household'
+		) && $ok;
+	}
+
+	// Same real-world barcode in two households. Barcodes are global facts (an
+	// EAN identifies a product worldwide), so two households stocking the same
+	// item WILL collide on a globally-unique barcode index.
+	$sharedBarcode = '4' . substr((string)abs(crc32($stamp)), 0, 12);
+	$barcodeOk = [];
+	foreach (['A', 'B'] as $letter) {
+		$productId = (int)db()->query(
+			'SELECT id FROM products WHERE name LIKE "' . $stamp . '-' . $letter . '%" LIMIT 1'
+		)->fetchColumn();
+		if ($productId === 0) {
+			continue;
+		}
+		$res = api('POST', '/objects/product_barcodes', $fixtures[$letter]['apiKey'], [
+			'product_id' => $productId,
+			'barcode' => $sharedBarcode,
+		]);
+		if ($res['status'] >= 200 && $res['status'] < 300) {
+			$barcodeOk[] = $letter;
+		}
+	}
+	$ok = check('both households can stock the same barcode', count($barcodeOk) === 2,
+		count($barcodeOk) === 2 ? '' : 'only household ' . (implode(',', $barcodeOk) ?: 'none') . ' could — ix_product_barcodes is globally unique') && $ok;
+
+	// Same user-defined entity name in two households.
+	$entOk = [];
+	foreach (['A', 'B'] as $letter) {
+		$res = api('POST', '/objects/userentities', $fixtures[$letter]['apiKey'], [
+			'name' => $stamp . '-shared-entity',
+			'caption' => 'Shared',
+			'description' => '',
+			'show_in_sidebar_menu' => 0,
+		]);
+		if ($res['status'] >= 200 && $res['status'] < 300) {
+			$entOk[] = $letter;
+		}
+	}
+	$ok = check('both households can have a userentity called the same thing', count($entOk) === 2,
+		count($entOk) === 2 ? '' : 'only household ' . (implode(',', $entOk) ?: 'none') . ' could — UNIQUE(name) is global') && $ok;
+
 	cleanupFixtures($stamp);
 	return $ok;
 }
@@ -481,6 +545,14 @@ function cleanupFixtures(string $stamp): void
 			} catch (Throwable $e) {
 			}
 		}
+		foreach (['locations', 'quantity_units', 'product_groups', 'shopping_lists', 'chores', 'batteries'] as $entity) {
+			try {
+				$pdo->exec('DELETE FROM ' . $entity . ' WHERE name LIKE "' . $stamp . '-shared-name%"');
+			} catch (Throwable $e) {
+			}
+		}
+		$pdo->exec('DELETE FROM product_barcodes WHERE product_id IN (SELECT id FROM products WHERE name LIKE "' . $stamp . '%")');
+		$pdo->exec('DELETE FROM userentities WHERE name LIKE "' . $stamp . '%"');
 		$pdo->exec('DELETE FROM shopping_list WHERE note LIKE "' . $stamp . '%"');
 		$pdo->exec('DELETE FROM meal_plan WHERE note LIKE "' . $stamp . '%"');
 		$pdo->exec('DELETE FROM users WHERE username LIKE "' . strtolower($stamp) . '%"');
