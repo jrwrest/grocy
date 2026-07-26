@@ -28,6 +28,8 @@ $app->group('', function (RouteCollectorProxy $group)
 
 	// User routes
 	$group->get('/users', '\Grocy\Controllers\UsersController:UsersList');
+	$group->get('/households', '\Grocy\Controllers\HouseholdsController:HouseholdsList');
+	$group->get('/household/{householdId}', '\Grocy\Controllers\HouseholdsController:HouseholdEditForm');
 	$group->get('/user/{userId}', '\Grocy\Controllers\UsersController:UserEditForm');
 	$group->get('/user/{userId}/permissions', '\Grocy\Controllers\UsersController:PermissionList');
 	$group->get('/usersettings', '\Grocy\Controllers\UsersController:UserSettings');
@@ -153,6 +155,13 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->delete('/files/{group}/{fileName}', '\Grocy\Controllers\FilesApiController:DeleteFile');
 
 	// Users
+	$group->get('/households', '\Grocy\Controllers\HouseholdsApiController:GetHouseholds');
+	$group->post('/households', '\Grocy\Controllers\HouseholdsApiController:CreateHousehold');
+	$group->put('/households/{householdId}', '\Grocy\Controllers\HouseholdsApiController:EditHousehold');
+	$group->delete('/households/{householdId}', '\Grocy\Controllers\HouseholdsApiController:DeleteHousehold');
+	$group->get('/households/{householdId}/members', '\Grocy\Controllers\HouseholdsApiController:GetMembers');
+	$group->post('/households/{householdId}/members', '\Grocy\Controllers\HouseholdsApiController:AddMember');
+
 	$group->get('/users', '\Grocy\Controllers\UsersApiController:GetUsers');
 	$group->post('/users', '\Grocy\Controllers\UsersApiController:CreateUser');
 	$group->put('/users/{userId}', '\Grocy\Controllers\UsersApiController:EditUser');

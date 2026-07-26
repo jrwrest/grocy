@@ -664,6 +664,8 @@
 						</a>
 						<a class="dropdown-item discrete-link permission-USERS_READ"
 							href="{{ $U('/users') }}"><i class="fa-solid fa-fw fa-users"></i>&nbsp;{{ $__t('Manage users') }}</a>
+						<a class="dropdown-item discrete-link permission-ADMIN"
+							href="{{ $U('/households') }}"><i class="fa-solid fa-fw fa-house-user"></i>&nbsp;{{ $__t('Manage households') }}</a>
 						<div class="dropdown-divider"></div>
 						@if(!GROCY_DISABLE_AUTH)
 						<a class="dropdown-item discrete-link"

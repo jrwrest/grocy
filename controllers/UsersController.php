@@ -43,7 +43,8 @@ class UsersController extends BaseController
 				'user' => $this->getDatabase()->users($args['userId']),
 				'mode' => 'edit',
 				'userfields' => $this->getUserfieldsService()->GetFields('users'),
-				'userfieldValues' => $this->getUserfieldsService()->GetAllValues('users')
+				'userfieldValues' => $this->getUserfieldsService()->GetAllValues('users'),
+				'households' => $this->getDatabase()->households()->orderBy('name', 'COLLATE NOCASE')->fetchAll()
 			]);
 		}
 	}

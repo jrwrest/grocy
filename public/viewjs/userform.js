@@ -163,3 +163,50 @@ else
 
 Grocy.Components.UserfieldsForm.Load();
 Grocy.FrontendHelpers.ValidateForm('user-form');
+
+// --- household assignment -------------------------------------------------
+// Deliberately a separate action from saving the user. Moving someone between
+// households changes what they can see rather than editing their details, so it
+// gets its own button and its own confirmation instead of being folded silently
+// into a Save. It posts to households/{id}/members, which is the one audited
+// place allowed to step outside the current household scope.
+$('#move-household-button').on('click', function(e)
+{
+	e.preventDefault();
+
+	var userId = $(e.currentTarget).attr('data-user-id');
+	var targetHouseholdId = $('#household-select').val();
+	var currentHouseholdId = $('#household-select').attr('data-current-household-id');
+
+	if (targetHouseholdId === currentHouseholdId)
+	{
+		return;
+	}
+
+	var targetName = $('#household-select option:selected').text().trim();
+
+	bootbox.confirm({
+		message: __t('Move this user to "%s"? They will immediately lose access to this household\'s data and see the other household\'s instead.', targetName),
+		closeButton: false,
+		buttons: {
+			cancel: { label: __t('No'), className: 'btn-secondary' },
+			confirm: { label: __t('Yes'), className: 'btn-danger' }
+		},
+		callback: function(result)
+		{
+			if (result === true)
+			{
+				Grocy.Api.Post('households/' + targetHouseholdId + '/members', { user_id: parseInt(userId) },
+					function(result)
+					{
+						window.location.href = U('/users');
+					},
+					function(xhr)
+					{
+						Grocy.FrontendHelpers.ShowGenericError('Could not move this user', xhr.response);
+					}
+				);
+			}
+		}
+	});
+});

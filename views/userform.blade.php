@@ -172,4 +172,36 @@
 		@endif
 	</div>
 </div>
+
+@if($mode == 'edit' && isset($households))
+<hr class="my-4">
+
+<div class="row">
+	<div class="col-lg-6 col-12">
+		<h4>{{ $__t('Household') }}</h4>
+		<p class="text-muted small">
+			{{ $__t('Moving this user to another household immediately changes what they can see: they lose access to this household\'s products, stock, shopping list, recipes and chores, and see the other household\'s instead. Nothing is copied or deleted.') }}
+		</p>
+
+		<div class="form-group">
+			<label for="household-select">{{ $__t('Household') }}</label>
+			<select class="form-control"
+				id="household-select"
+				data-current-household-id="{{ $user->household_id }}">
+				@foreach($households as $household)
+				<option value="{{ $household->id }}"
+					@if($user->household_id == $household->id) selected @endif>
+					{{ $household->name }}
+				</option>
+				@endforeach
+			</select>
+		</div>
+
+		<button id="move-household-button"
+			class="btn btn-outline-danger"
+			data-user-id="{{ $user->id }}">{{ $__t('Move to this household') }}</button>
+	</div>
+</div>
+@endif
+
 @stop

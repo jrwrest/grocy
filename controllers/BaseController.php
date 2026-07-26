@@ -111,6 +111,11 @@ class BaseController
 		return UserfieldsService::getInstance();
 	}
 
+	protected function getHouseholdService()
+	{
+		return \Grocy\Services\HouseholdService::getInstance();
+	}
+
 	protected function getUsersService()
 	{
 		return UsersService::getInstance();

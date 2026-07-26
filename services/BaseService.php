@@ -57,6 +57,11 @@ class BaseService
 		return TasksService::getInstance();
 	}
 
+	protected function getHouseholdService()
+	{
+		return HouseholdService::getInstance();
+	}
+
 	protected function getUsersService()
 	{
 		return UsersService::getInstance();

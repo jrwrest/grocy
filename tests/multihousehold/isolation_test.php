@@ -19,6 +19,9 @@
  *   4. Two users in different households, hitting the same API, never see each
  *      other's rows. This is the one that actually matters — 1-3 are the
  *      preconditions that make it achievable.
+ *   5. A household created through the API is immediately USABLE. Correct
+ *      isolation is not the same as a working feature: a household with no
+ *      master data looks fine and silently drops writes.
  *
  * Exit code 0 only when every check passes.
  */
@@ -597,9 +600,104 @@ function cleanupFixtures(string $stamp): void
 echo "\n\033[1mGrocy multi-household isolation harness\033[0m\n";
 echo 'database: ' . DB_PATH . "\n";
 
+/**
+ * Phase 4: a household created through the API must be immediately USABLE.
+ *
+ * Isolation being correct is not the same as the feature working. A household
+ * with no master data looks fine and silently drops writes, so this checks the
+ * creation path end to end rather than just the schema.
+ */
+function phase4HouseholdManagement(): bool
+{
+	heading('Phase 4 — household management: created via API, usable immediately');
+
+	if (!objectExists('households')) {
+		skip('household management', 'households table does not exist');
+		return false;
+	}
+
+	// An admin key on household 1, i.e. how a real operator would call this.
+	$adminKey = bin2hex(random_bytes(20));
+	db()->prepare('INSERT INTO api_keys (api_key, user_id, expires, key_type) VALUES (?, 1, "2999-12-31 23:59:59", "default")')
+		->execute([$adminKey]);
+
+	$name = 'PHASE4-' . bin2hex(random_bytes(3));
+	$created = api('POST', '/households', $adminKey, ['name' => $name]);
+	$householdId = $created['body']['created_object_id'] ?? null;
+
+	$ok = check('POST /households creates a household', $householdId !== null,
+		$householdId !== null ? '' : 'HTTP ' . $created['status'] . ' ' . substr($created['raw'], 0, 120));
+
+	if ($householdId === null) {
+		db()->exec('DELETE FROM api_keys WHERE api_key = "' . $adminKey . '"');
+		return false;
+	}
+
+	// The whole point: it must arrive with the master data grocy assumes exists.
+	foreach (['shopping_lists', 'locations', 'quantity_units'] as $table) {
+		$count = (int)db()->query('SELECT COUNT(*) FROM ' . $table . ' WHERE household_id = ' . (int)$householdId)->fetchColumn();
+		$ok = check("new household has a default $table row", $count > 0,
+			$count > 0 ? '' : 'a household without this silently no-ops on ordinary operations') && $ok;
+	}
+
+	$dupe = api('POST', '/households', $adminKey, ['name' => $name]);
+	$ok = check('duplicate household name is rejected', $dupe['status'] >= 400) && $ok;
+
+	$noName = api('POST', '/households', $adminKey, ['name' => '   ']);
+	$ok = check('blank household name is rejected', $noName['status'] >= 400) && $ok;
+
+	$renamed = api('PUT', '/households/' . $householdId, $adminKey, ['name' => $name . '-renamed']);
+	$ok = check('PUT /households/{id} renames', $renamed['status'] < 300) && $ok;
+
+	// Member assignment is the bootstrap path: a household with no members
+	// cannot be reached from inside its own scope at all.
+	$username = strtolower($name) . '-member';
+	db()->prepare('INSERT INTO users (username, password, household_id) VALUES (?, ?, 1)')
+		->execute([$username, password_hash('x', PASSWORD_DEFAULT)]);
+	$memberId = (int)db()->lastInsertId();
+
+	$added = api('POST', '/households/' . $householdId . '/members', $adminKey, ['user_id' => $memberId]);
+	$ok = check('POST /households/{id}/members moves a user in', $added['status'] < 300,
+		$added['status'] < 300 ? '' : 'HTTP ' . $added['status']) && $ok;
+
+	$landed = (int)db()->query('SELECT household_id FROM users WHERE id = ' . $memberId)->fetchColumn();
+	$ok = check('the user actually landed in the new household', $landed === (int)$householdId, "got $landed") && $ok;
+
+	$members = api('GET', '/households/' . $householdId . '/members', $adminKey);
+	$ok = check('GET /households/{id}/members lists them', is_array($members['body']) && count($members['body']) === 1) && $ok;
+
+	// Guards
+	$delWithMember = api('DELETE', '/households/' . $householdId, $adminKey);
+	$ok = check('deleting a household with members is refused', $delWithMember['status'] >= 400,
+		'otherwise its users are stranded on a household_id that no longer exists') && $ok;
+
+	$delFirst = api('DELETE', '/households/1', $adminKey);
+	$ok = check('deleting the first household is refused', $delFirst['status'] >= 400) && $ok;
+
+	$badAssign = api('POST', '/households/999999/members', $adminKey, ['user_id' => $memberId]);
+	$ok = check('assigning to a nonexistent household is refused', $badAssign['status'] >= 400) && $ok;
+
+	// Now empty it and confirm deletion works
+	db()->exec('UPDATE users SET household_id = 1 WHERE id = ' . $memberId);
+	$delEmpty = api('DELETE', '/households/' . $householdId, $adminKey);
+	$ok = check('an empty household can be deleted', $delEmpty['status'] < 300,
+		$delEmpty['status'] < 300 ? '' : 'HTTP ' . $delEmpty['status']) && $ok;
+
+	// cleanup
+	db()->exec('DELETE FROM users WHERE id = ' . $memberId);
+	db()->exec('DELETE FROM api_keys WHERE api_key = "' . $adminKey . '"');
+	foreach (['shopping_lists', 'locations', 'quantity_units'] as $table) {
+		db()->exec('DELETE FROM ' . $table . ' WHERE household_id = ' . (int)$householdId);
+	}
+	db()->exec('DELETE FROM households WHERE id = ' . (int)$householdId);
+
+	return $ok;
+}
+
 $p1 = phase1SchemaCoverage();
 $p2 = phase2ViewCoverage();
 $p3 = phase3RuntimeIsolation();
+$p4 = phase4HouseholdManagement();
 
 heading('Summary');
 printf("  passed %d, failed %d, skipped %d\n", $RESULTS['pass'], $RESULTS['fail'], $RESULTS['skip']);
@@ -611,7 +709,7 @@ if ($FAILURES !== []) {
 	}
 }
 
-$allGood = $p1 && $p2 && $p3;
+$allGood = $p1 && $p2 && $p3 && $p4;
 echo "\n" . ($allGood
 	? "\033[32mISOLATION VERIFIED — no cross-household leakage detected.\033[0m\n\n"
 	: "\033[31mNOT ISOLATED — multi-household is not safe to use yet.\033[0m\n\n");
