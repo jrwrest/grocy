@@ -15,6 +15,7 @@ $app->group('', function (RouteCollectorProxy $group)
 
 	// Login routes
 	$group->get('/login', '\Grocy\Controllers\LoginController:LoginPage')->setName('login');
+	$group->get('/register', '\Grocy\Controllers\RegistrationController:RegisterPage')->setName('register');
 	$group->post('/login', '\Grocy\Controllers\LoginController:ProcessLogin')->setName('login');
 	$group->get('/logout', '\Grocy\Controllers\LoginController:Logout');
 
@@ -155,6 +156,10 @@ $app->group('/api', function (RouteCollectorProxy $group)
 	$group->delete('/files/{group}/{fileName}', '\Grocy\Controllers\FilesApiController:DeleteFile');
 
 	// Users
+	// Self-registration. Intentionally unauthenticated (see AuthMiddleware) and
+	// gated behind FEATURE_FLAG_SELF_REGISTRATION.
+	$group->post('/register', '\Grocy\Controllers\RegistrationApiController:Register')->setName('api-register');
+
 	$group->get('/households', '\Grocy\Controllers\HouseholdsApiController:GetHouseholds');
 	$group->post('/households', '\Grocy\Controllers\HouseholdsApiController:CreateHousehold');
 	$group->put('/households/{householdId}', '\Grocy\Controllers\HouseholdsApiController:EditHousehold');

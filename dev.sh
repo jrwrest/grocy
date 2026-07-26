@@ -12,6 +12,20 @@ seed() {
   mkdir -p "$DATA"
 }
 
+# Self-registration ships OFF (see config-dist.php). Turn it ON for the dev
+# instance so ./dev.sh test exercises the whole of phase 5 rather than just the
+# "refused when disabled" path.
+enable_self_registration() {
+  # config.php starts as a copy of config-dist.php, where the flag is false, so
+  # this must FLIP the existing setting - appending a second Setting() call would
+  # be ignored, since Setting() only defines a constant that is not already set.
+  if docker exec grocy-dev grep -q "FEATURE_FLAG_SELF_REGISTRATION', false" /app/www/data/config.php 2>/dev/null; then
+    docker exec grocy-dev sed -i "s/FEATURE_FLAG_SELF_REGISTRATION', false/FEATURE_FLAG_SELF_REGISTRATION', true/" /app/www/data/config.php
+    docker exec grocy-dev sh -c 'rm -rf /app/www/data/viewcache/*' 2>/dev/null || true
+    echo "self-registration enabled for dev (shipped default stays off)"
+  fi
+}
+
 case "${1:-up}" in
   up)
     seed
@@ -22,6 +36,9 @@ case "${1:-up}" in
       code=$(curl -s -o /dev/null -m 5 -w "%{http_code}" -L http://localhost:9284/ || true)
       if [[ "$code" == "200" ]]; then
         echo " ready (http 200)"
+        # config.php is created by the container's init, so this has to happen
+        # after it is up, not before
+        enable_self_registration
         echo "login: admin / admin"
         exit 0
       fi

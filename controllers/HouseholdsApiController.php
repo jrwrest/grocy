@@ -2,6 +2,7 @@
 
 namespace Grocy\Controllers;
 
+use Grocy\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -18,11 +19,15 @@ class HouseholdsApiController extends BaseApiController
 {
 	public function GetHouseholds(Request $request, Response $response, array $args)
 	{
+		User::checkPermission($request, User::PERMISSION_ADMIN);
+
 		return $this->ApiResponse($response, $this->getDatabase()->households()->orderBy('name')->fetchAll());
 	}
 
 	public function CreateHousehold(Request $request, Response $response, array $args)
 	{
+		User::checkPermission($request, User::PERMISSION_ADMIN);
+
 		try
 		{
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
@@ -46,6 +51,8 @@ class HouseholdsApiController extends BaseApiController
 
 	public function EditHousehold(Request $request, Response $response, array $args)
 	{
+		User::checkPermission($request, User::PERMISSION_ADMIN);
+
 		try
 		{
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request);
@@ -67,6 +74,8 @@ class HouseholdsApiController extends BaseApiController
 
 	public function DeleteHousehold(Request $request, Response $response, array $args)
 	{
+		User::checkPermission($request, User::PERMISSION_ADMIN);
+
 		try
 		{
 			$this->getHouseholdService()->DeleteHousehold($args['householdId']);
@@ -81,6 +90,8 @@ class HouseholdsApiController extends BaseApiController
 
 	public function GetMembers(Request $request, Response $response, array $args)
 	{
+		User::checkPermission($request, User::PERMISSION_ADMIN);
+
 		try
 		{
 			return $this->ApiResponse($response, $this->getHouseholdService()->GetMembers($args['householdId']));
@@ -100,6 +111,8 @@ class HouseholdsApiController extends BaseApiController
 	 */
 	public function AddMember(Request $request, Response $response, array $args)
 	{
+		User::checkPermission($request, User::PERMISSION_ADMIN);
+
 		try
 		{
 			$requestBody = $this->GetParsedAndFilteredRequestBody($request);

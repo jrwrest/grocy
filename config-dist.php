@@ -129,6 +129,13 @@ Setting('TPRINTER_CONNECTOR', '/dev/usb/lp0'); // Printer device (does only matt
 // Feature flags
 // Here you can disable the parts which you don't need to have a less cluttered UI
 // (set the setting to "false" to disable the corresponding part, which should be self explanatory)
+// Multi-household: when true, anyone who can reach the login page can create
+// their OWN household and an account for it at /register. Off by default,
+// because turning it on means strangers can create accounts on this instance.
+// Self-registered users get full rights over their own household only - never
+// ADMIN, which would let them manage or delete other people's households.
+Setting('FEATURE_FLAG_SELF_REGISTRATION', false);
+
 Setting('FEATURE_FLAG_STOCK', true);
 Setting('FEATURE_FLAG_SHOPPINGLIST', true);
 Setting('FEATURE_FLAG_RECIPES', true);

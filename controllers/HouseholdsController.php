@@ -2,6 +2,7 @@
 
 namespace Grocy\Controllers;
 
+use Grocy\Controllers\Users\User;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 
@@ -9,6 +10,8 @@ class HouseholdsController extends BaseController
 {
 	public function HouseholdsList(Request $request, Response $response, array $args)
 	{
+		User::checkPermission($request, User::PERMISSION_ADMIN);
+
 		$households = $this->getDatabase()->households()->orderBy('name', 'COLLATE NOCASE')->fetchAll();
 
 		// Member counts must be read outside the household scope: the users table
@@ -32,6 +35,8 @@ class HouseholdsController extends BaseController
 
 	public function HouseholdEditForm(Request $request, Response $response, array $args)
 	{
+		User::checkPermission($request, User::PERMISSION_ADMIN);
+
 		if ($args['householdId'] == 'new')
 		{
 			return $this->renderPage($response, 'householdform', [

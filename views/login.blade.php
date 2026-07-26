@@ -54,6 +54,11 @@
 			<button id="login-button"
 				class="btn btn-success">{{ $__t('OK') }}</button>
 
+
+			@if(GROCY_FEATURE_FLAG_SELF_REGISTRATION)
+			<a class="btn btn-link btn-block"
+				href="{{ $U('/register') }}">{{ $__t('Create your own household') }}</a>
+			@endif
 		</form>
 	</div>
 </div>

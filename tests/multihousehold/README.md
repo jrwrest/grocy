@@ -28,6 +28,22 @@ like `products_resolved` and `stock_current`.
 **Phase 3 — runtime.** The one that actually matters: two users in two households hit
 the same API and must never see each other's rows. Covers 14 entities plus `/stock`.
 
+**Phase 4 — household management.** A household created through the API must be
+immediately *usable*, not merely present. Correct isolation is not the same as a
+working feature: a household with no default shopping list, location or quantity unit
+looks fine and silently drops writes.
+
+**Phase 5 — self-registration and its permission boundary.** Self-registration turns a
+mild gap into a serious one, so the boundary is tested alongside the feature rather than
+assumed: a self-registered user must NOT get `ADMIN` (which would let any stranger
+rename or delete other people's households), must be refused all five `/households`
+endpoints with 403, and must still be able to invite members into their *own* household.
+
+`FEATURE_FLAG_SELF_REGISTRATION` ships **off**. With it off, phase 5 verifies only that
+registration is genuinely refused (not merely hidden) and runs 2 checks; `./dev.sh up`
+flips it on for the dev instance so the full 17 checks run. That is why the total is 91
+with the flag off and 106 with it on.
+
 ## Two design rules it enforces on itself
 
 **No vacuous passes.** A probe only counts if the *other* household genuinely owns a

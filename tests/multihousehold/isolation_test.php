@@ -29,6 +29,26 @@
 const DB_PATH = '/app/www/data/grocy.db';
 const BASE_URL = 'http://127.0.0.1';
 
+// Phase 5 needs to know whether self-registration is enabled. Grocy's config
+// defines settings as GROCY_* constants via a Setting() helper, which does not
+// exist in this standalone script, so shim it and load the same file the app does.
+if (!function_exists('Setting')) {
+    function Setting(string $name, $value): void
+    {
+        if (!defined('GROCY_' . $name)) {
+            define('GROCY_' . $name, $value);
+        }
+    }
+    function DefaultUserSetting(string $name, $value): void
+    {
+        // not needed here, but config.php calls it
+    }
+    $configFile = '/app/www/data/config.php';
+    if (file_exists($configFile)) {
+        include $configFile;
+    }
+}
+
 /**
  * Tables that are infrastructure or already user-scoped, and therefore do NOT
  * get a household_id. Everything else in the schema must have one.
@@ -694,10 +714,124 @@ function phase4HouseholdManagement(): bool
 	return $ok;
 }
 
+/**
+ * Phase 5: self-registration, and the permission boundary it depends on.
+ *
+ * Self-registration turns a mild gap into a serious one: if the /households
+ * endpoints are unguarded, any stranger who signs up can rename or delete other
+ * people's households and move users between them. So the boundary is tested
+ * here alongside the feature, not assumed.
+ */
+function phase5SelfRegistration(): bool
+{
+	heading('Phase 5 — self-registration and its permission boundary');
+
+	$enabled = defined('GROCY_FEATURE_FLAG_SELF_REGISTRATION') && GROCY_FEATURE_FLAG_SELF_REGISTRATION === true;
+	$stamp = 'reg' . bin2hex(random_bytes(3));
+	$ok = true;
+
+	if (!$enabled) {
+		// The safe default. Verify it is genuinely closed, not merely hidden.
+		$res = api('POST', '/register', null, [
+			'username' => $stamp,
+			'password' => 'supersecret1',
+			'household_name' => $stamp . ' Home',
+		]);
+		$ok = check('with the flag off, POST /register is refused', $res['status'] >= 400,
+			'HTTP ' . $res['status']) && $ok;
+
+		$created = (int)db()->query('SELECT COUNT(*) FROM users WHERE username = "' . $stamp . '"')->fetchColumn();
+		$ok = check('with the flag off, no user is created', $created === 0) && $ok;
+
+		echo "\n  FEATURE_FLAG_SELF_REGISTRATION is off (the default). Set it to true in\n";
+		echo "  data/config.php to exercise the rest of this phase.\n";
+		return $ok;
+	}
+
+	// --- flag on ---------------------------------------------------------
+	$res = api('POST', '/register', null, [
+		'username' => $stamp,
+		'password' => 'supersecret1',
+		'household_name' => $stamp . ' Home',
+	]);
+	$userId = $res['body']['created_object_id'] ?? null;
+	$ok = check('anyone can register without an account', $userId !== null,
+		$userId !== null ? '' : 'HTTP ' . $res['status'] . ' ' . substr($res['raw'], 0, 120)) && $ok;
+
+	if ($userId === null) {
+		return false;
+	}
+
+	$householdId = (int)db()->query('SELECT household_id FROM users WHERE id = ' . (int)$userId)->fetchColumn();
+	$ok = check('registration created a NEW household', $householdId > 1, "household_id=$householdId") && $ok;
+
+	foreach (['shopping_lists', 'locations', 'quantity_units'] as $table) {
+		$n = (int)db()->query('SELECT COUNT(*) FROM ' . $table . ' WHERE household_id = ' . $householdId)->fetchColumn();
+		$ok = check("the registered household has a default $table row", $n > 0) && $ok;
+	}
+
+	// The security-critical assertion.
+	$perms = db()->query(
+		'SELECT ph.name FROM user_permissions up JOIN permission_hierarchy ph ON up.permission_id = ph.id WHERE up.user_id = ' . (int)$userId
+	)->fetchAll(\PDO::FETCH_COLUMN);
+	$ok = check('a self-registered user is NOT granted ADMIN', !in_array('ADMIN', $perms, true),
+		'ADMIN would let any stranger manage or delete other households') && $ok;
+	$ok = check('a self-registered user CAN run their own household', in_array('STOCK', $perms, true) && in_array('SHOPPINGLIST', $perms, true)) && $ok;
+
+	// Give them a key and prove the boundary holds over HTTP, not just in the DB.
+	$key = bin2hex(random_bytes(20));
+	db()->prepare('INSERT INTO api_keys (api_key, user_id, expires, key_type) VALUES (?, ?, "2999-12-31 23:59:59", "default")')
+		->execute([$key, $userId]);
+
+	foreach ([['GET', '/households'], ['POST', '/households'], ['DELETE', '/households/1'], ['GET', '/households/1/members'], ['POST', '/households/1/members']] as [$method, $path]) {
+		$r = api($method, $path, $key, ['name' => 'hijack', 'user_id' => 1]);
+		$ok = check("registered user is refused $method $path", $r['status'] === 403,
+			'HTTP ' . $r['status'] . ' — anything but 403 lets a stranger touch other households') && $ok;
+	}
+
+	// They can still invite into their OWN household, which is the point.
+	$member = api('POST', '/users', $key, [
+		'username' => $stamp . '-member',
+		'first_name' => 'M',
+		'last_name' => 'M',
+		'password' => 'anotherpass1',
+	]);
+	$ok = check('registered user can add a member to their own household', $member['status'] < 300,
+		'HTTP ' . $member['status']) && $ok;
+
+	$memberHousehold = (int)db()->query(
+		'SELECT household_id FROM users WHERE username = "' . $stamp . '-member"'
+	)->fetchColumn();
+	$ok = check('the invited member landed in the SAME household', $memberHousehold === $householdId,
+		"got $memberHousehold, expected $householdId") && $ok;
+
+	// Guards
+	$dupe = api('POST', '/register', null, ['username' => $stamp, 'password' => 'supersecret1', 'household_name' => 'Other']);
+	$ok = check('duplicate username is rejected', $dupe['status'] >= 400) && $ok;
+
+	$weak = api('POST', '/register', null, ['username' => $stamp . 'x', 'password' => 'short', 'household_name' => 'Weak']);
+	$ok = check('a password under 8 characters is rejected', $weak['status'] >= 400) && $ok;
+
+	$blank = api('POST', '/register', null, ['username' => $stamp . 'y', 'password' => 'supersecret1', 'household_name' => '   ']);
+	$ok = check('a blank household name is rejected', $blank['status'] >= 400) && $ok;
+
+	// cleanup
+	db()->exec('DELETE FROM api_keys WHERE api_key = "' . $key . '"');
+	db()->exec('DELETE FROM user_permissions WHERE user_id IN (SELECT id FROM users WHERE username LIKE "' . $stamp . '%")');
+	db()->exec('DELETE FROM users WHERE username LIKE "' . $stamp . '%"');
+	foreach (['shopping_lists', 'locations', 'quantity_units'] as $table) {
+		db()->exec('DELETE FROM ' . $table . ' WHERE household_id = ' . $householdId);
+	}
+	db()->exec('DELETE FROM households WHERE id = ' . $householdId);
+
+	return $ok;
+}
+
 $p1 = phase1SchemaCoverage();
 $p2 = phase2ViewCoverage();
 $p3 = phase3RuntimeIsolation();
 $p4 = phase4HouseholdManagement();
+$p5 = phase5SelfRegistration();
 
 heading('Summary');
 printf("  passed %d, failed %d, skipped %d\n", $RESULTS['pass'], $RESULTS['fail'], $RESULTS['skip']);
@@ -709,7 +843,7 @@ if ($FAILURES !== []) {
 	}
 }
 
-$allGood = $p1 && $p2 && $p3 && $p4;
+$allGood = $p1 && $p2 && $p3 && $p4 && $p5;
 echo "\n" . ($allGood
 	? "\033[32mISOLATION VERIFIED — no cross-household leakage detected.\033[0m\n\n"
 	: "\033[31mNOT ISOLATED — multi-household is not safe to use yet.\033[0m\n\n");

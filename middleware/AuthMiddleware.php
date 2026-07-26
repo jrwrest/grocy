@@ -36,6 +36,14 @@ abstract class AuthMiddleware extends BaseMiddleware
 			define('GROCY_AUTHENTICATED', false);
 			return $handler->handle($request);
 		}
+		elseif ($routeName === 'register' || $routeName === 'api-register')
+		{
+			// Self-registration has to be reachable without an account. The
+			// controllers themselves refuse unless FEATURE_FLAG_SELF_REGISTRATION
+			// is on, so this exemption cannot be used while the feature is off.
+			define('GROCY_AUTHENTICATED', false);
+			return $handler->handle($request);
+		}
 
 		if (GROCY_MODE === 'dev' || GROCY_MODE === 'demo' || GROCY_MODE === 'prerelease' || GROCY_IS_EMBEDDED_INSTALL || GROCY_DISABLE_AUTH)
 		{
