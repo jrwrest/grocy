@@ -1,0 +1,36 @@
+# Local dev instance for the multi-household work.
+#
+# Runs the SAME LinuxServer image as production (identical PHP, nginx and extension
+# set), with this worktree bind-mounted at /app/www so source edits are live on
+# refresh. Entirely separate from production at foodmatters.jameswrest.com.
+#
+#   ./dev.sh up        start
+#   ./dev.sh down      stop
+#   ./dev.sh reset     wipe the dev database and start fresh
+#   ./dev.sh db "SQL"  query the dev database
+#   open http://localhost:9284     login: admin / admin
+#
+# WHY dev-init.sh IS MOUNTED OVER THE IMAGE'S INIT
+# The stock init-grocy-config replaces /app/www/data with a symlink to /config/data,
+# via `rm -Rf /app/www/data`. With the worktree mounted that deletes tracked files
+# (data/.gitignore, data/.htaccess, data/plugins/.gitignore) straight out of git.
+# dev-init.sh does the useful parts (seed config.php, plugins, viewcache) and skips
+# the destructive symlink, keeping the database in ./data where grocy's own
+# data/.gitignore already excludes it from version control.
+
+services:
+  grocy-dev:
+    image: lscr.io/linuxserver/grocy:latest
+    container_name: grocy-dev
+    environment:
+      - PUID=501
+      - PGID=20
+      - TZ=Europe/Madrid
+    volumes:
+      # the worktree IS the app — edit here, refresh the browser
+      - ./:/app/www
+      # neutralise the destructive data/ symlink step (see above)
+      - ./dev-init.sh:/etc/s6-overlay/s6-rc.d/init-grocy-config/run:ro
+    ports:
+      - "127.0.0.1:9284:80"
+    restart: unless-stopped
